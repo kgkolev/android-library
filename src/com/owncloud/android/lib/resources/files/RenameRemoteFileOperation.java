@@ -26,127 +26,93 @@ package com.owncloud.android.lib.resources.files;
 
 import java.io.File;
 
-import org.apache.jackrabbit.webdav.client.methods.DavMethodBase;
-
 import android.util.Log;
 
 import com.owncloud.android.lib.common.OwnCloudClient;
-import com.owncloud.android.lib.common.network.WebdavUtils;
-import com.owncloud.android.lib.common.operations.RemoteOperation;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult;
 import com.owncloud.android.lib.common.operations.RemoteOperationResult.ResultCode;
 
-
 /**
- * Remote operation performing the rename of a remote file or folder in the ownCloud server.
+ * Remote operation performing the rename of a remote file or folder in the
+ * ownCloud server.
  * 
  * @author David A. Velasco
  * @author masensio
  */
-public class RenameRemoteFileOperation extends RemoteOperation {
+public class RenameRemoteFileOperation extends MoveRemoteFileOperation {
 
 	private static final String TAG = RenameRemoteFileOperation.class.getSimpleName();
 
 	private static final int RENAME_READ_TIMEOUT = 10000;
 	private static final int RENAME_CONNECTION_TIMEOUT = 5000;
 
-    private String mOldName;
-    private String mOldRemotePath;
-    private String mNewName;
-    private String mNewRemotePath;
-    
-    
-    /**
-     * Constructor
-     * 
-     * @param oldName			Old name of the file.
-     * @param oldRemotePath		Old remote path of the file. 
-     * @param newName			New name to set as the name of file.
-     * @param isFolder			'true' for folder and 'false' for files
-     */
+	private String mOldName;
+	private String mNewName;
+
+	/**
+	 * Constructor
+	 * 
+	 * @param oldName
+	 *            Old name of the file.
+	 * @param oldRemotePath
+	 *            Old remote path of the file.
+	 * @param newName
+	 *            New name to set as the name of file.
+	 * @param isFolder
+	 *            'true' for folder and 'false' for files
+	 */
 	public RenameRemoteFileOperation(String oldName, String oldRemotePath, String newName, boolean isFolder) {
+		super(oldRemotePath, getNewRemotePath(oldRemotePath, newName, isFolder), isFolder);
 		mOldName = oldName;
-		mOldRemotePath = oldRemotePath;
 		mNewName = newName;
-		
-        String parent = (new File(mOldRemotePath)).getParent();
-        parent = (parent.endsWith(FileUtils.PATH_SEPARATOR)) ? parent : parent + FileUtils.PATH_SEPARATOR; 
-        mNewRemotePath =  parent + mNewName;
-        if (isFolder) {
-            mNewRemotePath += FileUtils.PATH_SEPARATOR;
-        }
 	}
 
-	 /**
-     * Performs the rename operation.
-     * 
-     * @param   client      Client object to communicate with the remote ownCloud server.
-     */
+	/**
+	 * Calculates the new remote path to rename to
+	 * 
+	 * @param oldRemotePath
+	 *            Old remote path of the file
+	 * @param newName
+	 *            New name to set as file name
+	 * @param isFolder
+	 *            If renaming a folder
+	 * @return the new remote file path to rename to
+	 */
+	private static String getNewRemotePath(String oldRemotePath, String newName, boolean isFolder) {
+		String parent = (new File(oldRemotePath)).getParent();
+		parent = (parent.endsWith(FileUtils.PATH_SEPARATOR)) ? parent : parent + FileUtils.PATH_SEPARATOR;
+		String resultPath = parent + newName;
+		if (isFolder) {
+			resultPath += FileUtils.PATH_SEPARATOR;
+		}
+
+		return resultPath;
+	}
+
+	/**
+	 * Performs the rename operation.
+	 * 
+	 * @param client
+	 *            Client object to communicate with the remote ownCloud server.
+	 */
 	@Override
 	protected RemoteOperationResult run(OwnCloudClient client) {
+
+		if (mNewName.equals(mOldName)) {
+			return new RemoteOperationResult(ResultCode.OK);
+		}
+
 		RemoteOperationResult result = null;
-		
-		LocalMoveMethod move = null;
-        
-        boolean noInvalidChars = FileUtils.isValidPath(mNewRemotePath);
-        
-        if (noInvalidChars) {
-        try {
-        	
-            if (mNewName.equals(mOldName)) {
-                return new RemoteOperationResult(ResultCode.OK);
-            }
-        
-            
-            // check if a file with the new name already exists
-            if (client.existsFile(mNewRemotePath)) {
-            	return new RemoteOperationResult(ResultCode.INVALID_OVERWRITE);
-            }
-            
-            move = new LocalMoveMethod( client.getWebdavUri() + WebdavUtils.encodePath(mOldRemotePath),
-            		client.getWebdavUri() + WebdavUtils.encodePath(mNewRemotePath));
-            int status = client.executeMethod(move, RENAME_READ_TIMEOUT, RENAME_CONNECTION_TIMEOUT);
-            
-            move.getResponseBodyAsString(); // exhaust response, although not interesting
-            result = new RemoteOperationResult(move.succeeded(), status, move.getResponseHeaders());
-            Log.i(TAG, "Rename " + mOldRemotePath + " to " + mNewRemotePath + ": " + result.getLogMessage());
-            
-        } catch (Exception e) {
-            result = new RemoteOperationResult(e);
-            Log.e(TAG, "Rename " + mOldRemotePath + " to " + ((mNewRemotePath==null) ? mNewName : mNewRemotePath) + ": " + result.getLogMessage(), e);
-            
-        } finally {
-            if (move != null)
-                move.releaseConnection();
-        }
-        } else {
-        	result = new RemoteOperationResult(ResultCode.INVALID_CHARACTER_IN_NAME);
-        }
-        	
-        return result;
+
+		try {
+			result = runNoLog(client, RENAME_READ_TIMEOUT, RENAME_CONNECTION_TIMEOUT);
+			Log.i(TAG, "Rename " + mSrcRemotePath + " to " + mDestRemotePath + ": " + result.getLogMessage());
+		} catch (Exception e) {
+			result = new RemoteOperationResult(e);
+			Log.e(TAG, "Rename " + mSrcRemotePath + " to " + ((mDestRemotePath == null) ? mNewName : mDestRemotePath) + ": " + result.getLogMessage(), e);
+		}
+
+		return result;
 	}
-	
-	/**
-	 * Move operation
-	 * 
-	 */
-    private class LocalMoveMethod extends DavMethodBase {
-
-        public LocalMoveMethod(String uri, String dest) {
-            super(uri);
-            addRequestHeader(new org.apache.commons.httpclient.Header("Destination", dest));
-        }
-
-        @Override
-        public String getName() {
-            return "MOVE";
-        }
-
-        @Override
-        protected boolean isSuccess(int status) {
-            return status == 201 || status == 204;
-        }
-            
-    }
 
 }
