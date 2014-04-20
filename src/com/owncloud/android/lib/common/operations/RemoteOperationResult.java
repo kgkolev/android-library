@@ -84,6 +84,7 @@ public class RemoteOperationResult implements Serializable {
         CANCELLED, 
         INVALID_LOCAL_FILE_NAME, 
         INVALID_OVERWRITE,
+        INVALID_DESTINATION_FILE,
         CONFLICT, 
         OAUTH2_ERROR,
         SYNC_CONFLICT,
